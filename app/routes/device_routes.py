@@ -12,19 +12,17 @@ def get_devices(db: Session = Depends(get_db)):
     return [
         {
             "id": device.id,
-            "scan_id": device.scan_id,
-            "ip_address": device.ip_address,
-            "mac_address": device.mac_address,
-            "hostname": device.hostname,
-            "status": device.status,
-            "os_guess": device.os_guess,
+            "scan_id": getattr(device, "scan_id", None),
+            "ip": getattr(device, "ip", None),
+            "mac": getattr(device, "mac", None),
+            "hostname": getattr(device, "hostname", None),
             "ports": [
                 {
-                    "port": port.port_number,
-                    "protocol": port.protocol,
-                    "state": port.state,
-                    "service": port.service,
-                    "version": port.version,
+                    "port": getattr(port, "port", None),
+                    "protocol": getattr(port, "protocol", None),
+                    "state": getattr(port, "state", None),
+                    "service": getattr(port, "service", None),
+                    "version": getattr(port, "version", None),
                 }
                 for port in device.ports
             ],

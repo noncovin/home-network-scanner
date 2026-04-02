@@ -22,11 +22,32 @@
         <button type="submit">Start Scan</button>
     </form>
 
+
+    <form method="post" action="/devices/clear" style="margin-top: 0.5rem;">
+        <button type="submit">Clear Discovered Devices</button>
+    </form>
+
+    <form method="get" action="/export/csv" style="margin-top: 0.5rem;">
+        <button type="submit">Download Devices CSV</button>
+    </form>
+
+    <div class="card">
+        <h2>Current Scan Progress</h2>
+        <div id="progress-message">No scan running</div>
+        <div style="margin-top: 0.75rem; width: 100%; background: #eee; border-radius: 8px; overflow: hidden;">
+            <div id="progress-bar" style="width: 0%; padding: 0.5rem 0; text-align: center; background: #4caf50; color: white;">0%</div>
+        </div>
+        <p id="progress-status" style="margin-top: 0.75rem;">Status: idle</p>
+        <p id="progress-elapsed">Elapsed: 0s</p>
+        <p id="progress-remaining">Estimated time left: 0s</p>
+        <p id="progress-hosts">Hosts: 0 / 0</p>
+    </div>
+
     <div class="card">
         <h2>Recent Scans</h2>
         <ul>
             {% for scan in scans %}
-            <li>#{{ scan.id }} - {{ scan.scan_name }} - {{ scan.target }} - {{ scan.status }}</li>
+            <li>#{{ scan.id }} - {{ scan.target }} - {{ scan.status }}</li>
             {% else %}
             <li>No scans yet.</li>
             {% endfor %}
@@ -38,12 +59,14 @@
         <ul>
             {% for device in devices %}
             <li>
-                {{ device.ip_address }}
+                {{ device.ip }}
+                {% if device.os_name %} - {{ device.os_name }}{% endif %}
+                {% if device.os_version and device.os_version != device.os_name %} ({{ device.os_version }}){% endif %}
                 {% if device.hostname %} ({{ device.hostname }}) {% endif %}
                 {% if device.ports %}
                 <ul>
                     {% for port in device.ports %}
-                    <li>{{ port.protocol }}/{{ port.port_number }} - {{ port.state }}{% if port.service %} - {{ port.service }}{% endif %}</li>
+                    <li>{{ port.protocol }}/{{ port.port }} - {{ port.state }}{% if port.service %} - {{ port.service }}{% endif %}{% if port.version %} ({{ port.version }}){% endif %}</li>
                     {% endfor %}
                 </ul>
                 {% endif %}
@@ -53,5 +76,40 @@
             {% endfor %}
         </ul>
     </div>
+
+<script>
+function formatSeconds(value) {
+    const total = Math.max(0, parseInt(value || 0, 10));
+    const minutes = Math.floor(total / 60);
+    const seconds = total % 60;
+    if (minutes > 0) {
+        return `${minutes}m ${seconds}s`;
+    }
+    return `${seconds}s`;
+}
+
+async function refreshProgress() {
+    try {
+        const response = await fetch('/progress');
+        const data = await response.json();
+
+        const percent = Math.max(0, Math.min(100, parseInt(data.percent || 0, 10)));
+        const bar = document.getElementById('progress-bar');
+        bar.style.width = `${percent}%`;
+        bar.textContent = `${percent}%`;
+
+        document.getElementById('progress-message').textContent = data.message || 'No scan running';
+        document.getElementById('progress-status').textContent = `Status: ${data.status || 'idle'}`;
+        document.getElementById('progress-elapsed').textContent = `Elapsed: ${formatSeconds(data.elapsed_seconds)}`;
+        document.getElementById('progress-remaining').textContent = `Estimated time left: ${formatSeconds(data.remaining_seconds)}`;
+        document.getElementById('progress-hosts').textContent = `Hosts: ${data.hosts_completed || 0} / ${data.hosts_total || 0}`;
+    } catch (error) {
+        document.getElementById('progress-message').textContent = 'Unable to load progress';
+    }
+}
+
+refreshProgress();
+setInterval(refreshProgress, 1000);
+</script>
 </body>
 </html>

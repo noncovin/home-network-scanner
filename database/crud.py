@@ -18,11 +18,11 @@ def complete_scan(db: Session, scan: models.Scan) -> models.Scan:
 
 
 def list_scans(db: Session):
-    return db.query(models.Scan).order_by(models.Scan.created_at.desc()).all()
+    return db.query(models.Scan).order_by(models.Scan.id.desc()).all()
 
 
 def list_devices(db: Session):
-    return db.query(models.Device).order_by(models.Device.created_at.desc()).all()
+    return db.query(models.Device).order_by(models.Device.id.desc()).all()
 
 
 def add_device_with_ports(db: Session, scan_id: int, host_result: dict) -> models.Device:
@@ -52,3 +52,9 @@ def add_device_with_ports(db: Session, scan_id: int, host_result: dict) -> model
     db.commit()
     db.refresh(device)
     return device
+
+
+def clear_devices(db: Session):
+    db.query(models.Port).delete()
+    db.query(models.Device).delete()
+    db.commit()

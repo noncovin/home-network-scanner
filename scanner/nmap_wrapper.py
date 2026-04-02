@@ -1,56 +1,73 @@
-from typing import Dict, List
-import os
-
-try:
-    import nmap
-except Exception:  # pragma: no cover
-    nmap = None
-
-DEFAULT_SCAN_ARGUMENTS = os.getenv("DEFAULT_SCAN_ARGUMENTS", "-T4 -F")
+import nmap
+from nmap.nmap import PortScannerError
 
 
-def scan_host(ip_address: str, arguments: str = DEFAULT_SCAN_ARGUMENTS) -> Dict:
-    """Scan a single host with Nmap and return normalized data."""
-    if nmap is None:
-        return {
-            "ip": ip_address,
-            "status": "unknown",
-            "ports": [],
-        }
+def _extract_os_info(host_data):
+    os_name = None
+    os_version = None
 
-    scanner = nmap.PortScanner()
-    scanner.scan(hosts=ip_address, arguments=arguments)
+    os_matches = host_data.get("osmatch", []) if isinstance(host_data, dict) else []
+    if os_matches:
+        best_match = os_matches[0]
+        os_classes = best_match.get("osclass", []) if isinstance(best_match, dict) else []
 
-    if ip_address not in scanner.all_hosts():
-        return {
-            "ip": ip_address,
-            "status": "down",
-            "ports": [],
-        }
+        if os_classes:
+            best_class = os_classes[0]
+            vendor = best_class.get("vendor")
+            family = best_class.get("osfamily")
+            osgen = best_class.get("osgen")
 
-    host_data = scanner[ip_address]
-    ports: List[Dict] = []
-    for proto in host_data.all_protocols():
-        for port_number, details in host_data[proto].items():
-            ports.append(
-                {
-                    "port": int(port_number),
-                    "protocol": proto,
-                    "state": details.get("state", "unknown"),
-                    "service": details.get("name"),
-                    "version": " ".join(
-                        filter(
-                            None,
-                            [details.get("product"), details.get("version"), details.get("extrainfo")],
-                        )
-                    )
-                    or None,
-                }
-            )
+            name_parts = [part for part in [vendor, family] if part]
+            if name_parts:
+                os_name = " ".join(name_parts)
+            else:
+                os_name = best_match.get("name")
 
-    return {
-        "ip": ip_address,
-        "hostname": host_data.hostname() if hasattr(host_data, "hostname") else None,
-        "status": host_data.state() if hasattr(host_data, "state") else "up",
-        "ports": sorted(ports, key=lambda p: (p["protocol"], p["port"])),
+            os_version = osgen or best_match.get("name")
+        else:
+            os_name = best_match.get("name")
+            os_version = best_match.get("name")
+
+    return os_name, os_version
+
+
+def run_nmap_scan(target_ip):
+    nm = nmap.PortScanner()
+    scan_data = {
+        "ports": [],
+        "os_name": None,
+        "os_version": None,
     }
+
+    try:
+        nm.scan(hosts=target_ip, arguments="-sT -sV -O --osscan-guess -T4")
+    except PortScannerError:
+        try:
+            nm.scan(hosts=target_ip, arguments="-sT -sV -T4")
+        except PortScannerError:
+            return scan_data
+
+    results = []
+
+    if target_ip in nm.all_hosts():
+        host_data = nm[target_ip]
+        os_name, os_version = _extract_os_info(host_data)
+        scan_data["os_name"] = os_name
+        scan_data["os_version"] = os_version
+
+        for proto in host_data.all_protocols():
+            ports = host_data[proto].keys()
+
+            for port in ports:
+                service = host_data[proto][port]
+
+                results.append({
+                    "port": port,
+                    "protocol": proto,
+                    "state": service.get("state"),
+                    "service": service.get("name"),
+                    "version": service.get("version"),
+                })
+
+    scan_data["ports"] = results
+    return scan_data

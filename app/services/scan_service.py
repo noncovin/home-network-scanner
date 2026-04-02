@@ -1,21 +1,189 @@
-from sqlalchemy.orm import Session
-from database import crud
-from scanner.discovery import discover_hosts
-from scanner.nmap_wrapper import scan_host
-from scanner.utils import merge_host_data
+from scanner.discovery import arp_scan
+from scanner.nmap_wrapper import run_nmap_scan
+from database.db import SessionLocal
+from database import models
+import socket
+import time
+from copy import deepcopy
+
+def resolve_hostname(ip: str):
+    try:
+        return socket.gethostbyaddr(ip)[0]
+    except Exception:
+        return None
 
 
-def run_scan(db: Session, target: str, scan_name: str):
-    scan = crud.create_scan(db, scan_name=scan_name, target=target)
+SCAN_PROGRESS = {
+    "current": {
+        "is_running": False,
+        "target": None,
+        "status": "idle",
+        "message": "No scan running",
+        "percent": 0,
+        "elapsed_seconds": 0,
+        "estimated_total_seconds": 0,
+        "remaining_seconds": 0,
+        "hosts_total": 0,
+        "hosts_completed": 0,
+    }
+}
 
-    discovered_hosts = discover_hosts(target)
-    if not discovered_hosts:
-        # Fallback: allow direct host/subnet testing without discovery results.
-        discovered_hosts = [{"ip": target, "mac": None}] if "/" not in target else []
 
-    for discovered_host in discovered_hosts:
-        scanned_host = scan_host(discovered_host["ip"])
-        merged = merge_host_data(discovered_host, scanned_host)
-        crud.add_device_with_ports(db, scan.id, merged)
+def _set_progress(**updates):
+    current = SCAN_PROGRESS["current"]
+    current.update(updates)
 
-    return crud.complete_scan(db, scan)
+    elapsed = max(0, int(current.get("elapsed_seconds", 0)))
+    estimated_total = max(0, int(current.get("estimated_total_seconds", 0)))
+
+    if current.get("is_running"):
+        if estimated_total > 0:
+            current["remaining_seconds"] = max(0, estimated_total - elapsed)
+        else:
+            current["remaining_seconds"] = 0
+    else:
+        current["remaining_seconds"] = 0
+
+
+def get_scan_progress():
+    return deepcopy(SCAN_PROGRESS["current"])
+
+
+def start_scan(target: str):
+    db = SessionLocal()
+    start_time = time.time()
+    final_status = "running"
+
+    _set_progress(
+        is_running=True,
+        target=target,
+        status="running",
+        message="Starting scan...",
+        percent=2,
+        elapsed_seconds=0,
+        estimated_total_seconds=20,
+        remaining_seconds=20,
+        hosts_total=0,
+        hosts_completed=0,
+    )
+
+    # Create scan record
+    scan = models.Scan(target=target, status="running")
+    db.add(scan)
+    db.commit()
+    db.refresh(scan)
+
+    try:
+        _set_progress(
+            message="Discovering hosts...",
+            percent=10,
+            elapsed_seconds=int(time.time() - start_time),
+            estimated_total_seconds=20,
+        )
+
+        # 1. Discover hosts
+        hosts = arp_scan(target)
+        hosts_total = len(hosts)
+
+        estimated_total_seconds = max(10, int(time.time() - start_time) + max(6, hosts_total * 4))
+        _set_progress(
+            message=f"Discovered {hosts_total} host(s). Scanning ports...",
+            percent=20,
+            elapsed_seconds=int(time.time() - start_time),
+            estimated_total_seconds=estimated_total_seconds,
+            hosts_total=hosts_total,
+            hosts_completed=0,
+        )
+
+        if hosts_total == 0:
+            scan.status = "completed"
+            db.commit()
+            final_status = scan.status
+            _set_progress(
+                is_running=False,
+                status="completed",
+                message="Scan completed. No hosts found.",
+                percent=100,
+                elapsed_seconds=int(time.time() - start_time),
+                estimated_total_seconds=int(time.time() - start_time),
+                hosts_total=0,
+                hosts_completed=0,
+            )
+            return {"status": final_status}
+
+        for index, host in enumerate(hosts, start=1):
+            device = models.Device(
+                ip=host["ip"],
+                mac=host.get("mac"),
+                hostname=resolve_hostname(host["ip"]),
+            )
+            db.add(device)
+            db.commit()
+            db.refresh(device)
+
+            # 2. Run Nmap scan
+            scan_result = run_nmap_scan(host["ip"])
+            ports = scan_result.get("ports", []) if isinstance(scan_result, dict) else scan_result
+            device.os_name = scan_result.get("os_name") if isinstance(scan_result, dict) else None
+            device.os_version = scan_result.get("os_version") if isinstance(scan_result, dict) else None
+
+            # 3. Save ports
+            for p in ports:
+                port = models.Port(
+                    device_id=device.id,
+                    port=p["port"],
+                    protocol=p["protocol"],
+                    state=p["state"],
+                    service=p.get("service"),
+                    version=p.get("version")
+                )
+                db.add(port)
+
+            db.commit()
+
+            percent = 20 + int((index / hosts_total) * 75)
+            elapsed_seconds = int(time.time() - start_time)
+            _set_progress(
+                message=f"Scanned {index} of {hosts_total} host(s)...",
+                percent=min(percent, 95),
+                elapsed_seconds=elapsed_seconds,
+                estimated_total_seconds=max(estimated_total_seconds, elapsed_seconds),
+                hosts_total=hosts_total,
+                hosts_completed=index,
+            )
+
+        scan.status = "completed"
+        db.commit()
+        final_status = scan.status
+
+        total_elapsed = int(time.time() - start_time)
+        _set_progress(
+            is_running=False,
+            status="completed",
+            message="Scan completed.",
+            percent=100,
+            elapsed_seconds=total_elapsed,
+            estimated_total_seconds=total_elapsed,
+            hosts_total=hosts_total,
+            hosts_completed=hosts_total,
+        )
+
+    except Exception as e:
+        scan.status = "failed"
+        db.commit()
+        final_status = scan.status
+        total_elapsed = int(time.time() - start_time)
+        _set_progress(
+            is_running=False,
+            status="failed",
+            message=f"Scan failed: {str(e)}",
+            percent=100,
+            elapsed_seconds=total_elapsed,
+            estimated_total_seconds=total_elapsed,
+        )
+        raise e
+
+    finally:
+        db.close()
+
+    return {"status": final_status}
