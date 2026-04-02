@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Home Network Scanner</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 2rem; }
+        form, .card { margin-bottom: 1.5rem; padding: 1rem; border: 1px solid #ddd; border-radius: 8px; }
+        input, button { padding: 0.5rem; margin-right: 0.5rem; }
+        ul { padding-left: 1.25rem; }
+    </style>
+</head>
+<body>
+    <h1>Home Network Scanner</h1>
+
+    <form method="post" action="/scan">
+        <label for="target">Target</label>
+        <input id="target" name="target" value="192.168.1.0/24" required>
+        <label for="scan_name">Scan Name</label>
+        <input id="scan_name" name="scan_name" value="Manual Scan" required>
+        <button type="submit">Start Scan</button>
+    </form>
+
+    <div class="card">
+        <h2>Recent Scans</h2>
+        <ul>
+            {% for scan in scans %}
+            <li>#{{ scan.id }} - {{ scan.scan_name }} - {{ scan.target }} - {{ scan.status }}</li>
+            {% else %}
+            <li>No scans yet.</li>
+            {% endfor %}
+        </ul>
+    </div>
+
+    <div class="card">
+        <h2>Discovered Devices</h2>
+        <ul>
+            {% for device in devices %}
+            <li>
+                {{ device.ip_address }}
+                {% if device.hostname %} ({{ device.hostname }}) {% endif %}
+                {% if device.ports %}
+                <ul>
+                    {% for port in device.ports %}
+                    <li>{{ port.protocol }}/{{ port.port_number }} - {{ port.state }}{% if port.service %} - {{ port.service }}{% endif %}</li>
+                    {% endfor %}
+                </ul>
+                {% endif %}
+            </li>
+            {% else %}
+            <li>No devices yet.</li>
+            {% endfor %}
+        </ul>
+    </div>
+</body>
+</html>
