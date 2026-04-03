@@ -1,0 +1,67 @@
+
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Device Details - Home Network Scanner</title>
+<style>
+    body { font-family: Arial, sans-serif; margin: 2rem; }
+    .card { margin-bottom: 1.5rem; padding: 1rem; border: 1px solid #ddd; border-radius: 8px; }
+    ul { padding-left: 1.25rem; }
+    a.button {
+        display: inline-block;
+        padding: 0.5rem 0.75rem;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        text-decoration: none;
+        color: inherit;
+        margin-bottom: 1rem;
+    }
+</style>
+</head>
+<body>
+<a class="button" href="/">← Back to Dashboard</a>
+
+<h1>Device Details</h1>
+
+<div class="card">
+    <p><strong>IP Address:</strong> {{ device.ip or "Unknown" }}</p>
+    <p><strong>Hostname:</strong> {{ device.hostname or "Unknown" }}</p>
+    <p><strong>MAC Address:</strong> {{ device.mac or "Unknown" }}</p>
+    <p><strong>Vendor:</strong> {{ device.vendor or "Unknown" }}</p>
+    <p><strong>OS:</strong> {{ device.os_name or "Unknown" }}</p>
+    <p><strong>OS Version:</strong> {{ device.os_version or "Unknown" }}</p>
+</div>
+
+<div class="card">
+    <h2>Open Ports</h2>
+    <ul>
+        {% for port in device.ports %}
+        <li>
+            {{ port.protocol }}/{{ port.port }} - {{ port.state }}
+            {% if port.service %} - {{ port.service }}{% endif %}
+            {% if port.version %} ({{ port.version }}){% endif %}
+        </li>
+        {% else %}
+        <li>No ports recorded.</li>
+        {% endfor %}
+    </ul>
+</div>
+
+<div class="card">
+    <h2>Possible Vulnerabilities</h2>
+    <ul>
+        {% for vuln in device.vulnerabilities %}
+        <li>
+            <strong>{{ vuln.cve_id }}</strong>
+            {% if vuln.description %} - {{ vuln.description }}{% endif %}
+        </li>
+        {% else %}
+        <li>No vulnerability data found.</li>
+        {% endfor %}
+    </ul>
+</div>
+</body>
+</html>

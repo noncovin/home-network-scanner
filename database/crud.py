@@ -58,3 +58,8 @@ def clear_devices(db: Session):
     db.query(models.Port).delete()
     db.query(models.Device).delete()
     db.commit()
+
+
+def clear_scans(db: Session):
+    db.query(models.Scan).delete()
+    db.commit()

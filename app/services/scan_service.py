@@ -1,5 +1,7 @@
 from scanner.discovery import arp_scan
 from scanner.nmap_wrapper import run_nmap_scan
+from scanner.vendor_lookup import lookup_vendor
+from scanner.vulns import lookup_cves
 from database.db import SessionLocal
 from database import models
 import socket
@@ -28,6 +30,8 @@ SCAN_PROGRESS = {
     }
 }
 
+SCAN_CANCEL = {"cancel": False}
+
 
 def _set_progress(**updates):
     current = SCAN_PROGRESS["current"]
@@ -49,9 +53,18 @@ def get_scan_progress():
     return deepcopy(SCAN_PROGRESS["current"])
 
 
+def request_cancel():
+    SCAN_CANCEL["cancel"] = True
+
+
+def reset_cancel():
+    SCAN_CANCEL["cancel"] = False
+
+
 def start_scan(target: str):
     db = SessionLocal()
     start_time = time.time()
+    reset_cancel()
     final_status = "running"
 
     _set_progress(
@@ -112,10 +125,26 @@ def start_scan(target: str):
             return {"status": final_status}
 
         for index, host in enumerate(hosts, start=1):
+            if SCAN_CANCEL.get("cancel"):
+                scan.status = "cancelled"
+                db.commit()
+                final_status = scan.status
+                _set_progress(
+                    is_running=False,
+                    status="cancelled",
+                    message="Scan cancelled by user",
+                    percent=100,
+                    elapsed_seconds=int(time.time() - start_time),
+                    estimated_total_seconds=int(time.time() - start_time),
+                    hosts_total=hosts_total,
+                    hosts_completed=index - 1,
+                )
+                return {"status": final_status}
             device = models.Device(
                 ip=host["ip"],
                 mac=host.get("mac"),
                 hostname=resolve_hostname(host["ip"]),
+                vendor=lookup_vendor(host.get("mac")),
             )
             db.add(device)
             db.commit()
@@ -138,6 +167,17 @@ def start_scan(target: str):
                     version=p.get("version")
                 )
                 db.add(port)
+                db.flush()
+
+                cves = lookup_cves(p.get("service"), p.get("version"))
+                for cve in cves:
+                    vuln = models.Vulnerability(
+                        device_id=device.id,
+                        port_id=port.id,
+                        cve_id=cve.get("cve_id"),
+                        description=cve.get("description"),
+                    )
+                    db.add(vuln)
 
             db.commit()
 

@@ -1,0 +1,5 @@
+3C:5A:B4,Ubiquiti
+F0:18:98,Google
+FC:FB:FB,Amazon
+00:1A:79,Apple
+00:1B:63,Apple

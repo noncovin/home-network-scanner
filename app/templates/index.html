@@ -23,13 +23,23 @@
     </form>
 
 
-    <form method="post" action="/devices/clear" style="margin-top: 0.5rem;">
-        <button type="submit">Clear Discovered Devices</button>
-    </form>
+    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.5rem;">
+        <form method="post" action="/devices/clear" style="margin: 0; padding: 0; border: none;">
+            <button type="submit">Clear Discovered Devices</button>
+        </form>
 
-    <form method="get" action="/export/csv" style="margin-top: 0.5rem;">
-        <button type="submit">Download Devices CSV</button>
-    </form>
+        <form method="post" action="/scans/clear" style="margin: 0; padding: 0; border: none;">
+            <button type="submit">Clear Scan History</button>
+        </form>
+
+        <form method="get" action="/export/csv" style="margin: 0; padding: 0; border: none;">
+            <button type="submit">Download Devices CSV</button>
+        </form>
+
+        <form method="post" action="/scan/cancel" style="margin: 0; padding: 0; border: none;">
+            <button type="submit" style="background-color: #e53935; color: white;">Cancel Scan</button>
+        </form>
+    </div>
 
     <div class="card">
         <h2>Current Scan Progress</h2>
@@ -59,7 +69,8 @@
         <ul>
             {% for device in devices %}
             <li>
-                {{ device.ip }}
+                <a href="/devices/{{ device.id }}">{{ device.ip }}</a>
+                {% if device.vendor %} - {{ device.vendor }}{% endif %}
                 {% if device.os_name %} - {{ device.os_name }}{% endif %}
                 {% if device.os_version and device.os_version != device.os_name %} ({{ device.os_version }}){% endif %}
                 {% if device.hostname %} ({{ device.hostname }}) {% endif %}
